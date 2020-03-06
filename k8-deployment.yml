@@ -1,0 +1,99 @@
+---
+- hosts: cluster
+  become: yes
+  tasks:
+    - name: Bootstrap Python
+      raw: test -e usr/bin/python || (apt -y update && apt install -y python)
+
+    - name: Install required system packages
+      apt: name={{ item }} state=latest update_cache=yes
+      loop: [ 'apt-transport-https', 'python-apt','curl', 'containerd', 'docker.io']
+
+    - name: Add Kubernetes GPG apt Key
+      apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - apt_repository:
+        repo: deb http://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+      become: yes
+ 
+    - name: Install required system packages for k8s
+      apt: name={{ item }} state=latest update_cache=yes
+      loop: ['kubelet', 'kubeadm', 'kubernetes-cni']
+
+- hosts: master
+  become: yes
+  tasks:
+
+    - name: Unmask docker service
+      command: systemctl unmask docker
+
+    - name: Start docker service
+      command: systemctl start docker
+
+    - name: Initialise control-plane node
+      command: kubeadm init
+      become: yes
+
+    - name: Create kube directory
+      file:
+        path: "/{{ansible_env.HOME}}/.kube"
+        state: directory
+        mode: 0700
+    
+    - name: Change copy config file
+      command: cp /etc/kubernetes/admin.conf {{ansible_env.HOME}}/.kube/config
+    
+    - name: Change permissions on kube config file
+      file: path="{{ansible_env.HOME}}/.kube/config" owner="{{ansible_env.USER}}"    
+
+    - name: networkbridge
+      sysctl: 
+        name: net.bridge.bridge-nf-call-iptables
+        value: '1'
+        sysctl_set: yes
+
+    - name: WeaveNet
+      shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
+
+    - name: SchedulePods
+      shell: kubectl taint nodes --all node-role.kubernetes.io/master-
+
+    - name: getJoinCommand
+      shell: kubeadm token create --print-join-command ; echo
+      register: join_output
+    
+    - name: test join output command was successful
+      debug:
+        msg: "Generated join command is {{ join_output.stdout }}"
+
+    - name: add join_output to dummy host
+      add_host:
+        name: "join_output_holder"
+        value: "{{ join_output.stdout }} --v=2"
+    
+- hosts: nodes
+  become: yes
+  tasks:
+
+    - name: joinCluster
+      shell: "{{ hostvars['join_output_holder']['value'] }}"
+
+- hosts: master
+  become: yes
+  tasks:
+
+    - name: recordknodes
+      shell: kubectl get nodes; echo
+      register: node_count
+
+    - name: add node count to var
+      add_host:
+        name: "node_count_holder"
+        value: "{{ node_count.stdout }}"
+    
+    - name: check success of k8 configuration
+      debug:
+        msg: "{{ hostvars['node_count_holder']['value'] }}"

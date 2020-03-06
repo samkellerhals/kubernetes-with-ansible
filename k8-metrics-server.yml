@@ -1,0 +1,17 @@
+---
+- hosts: master
+  become: yes
+  tasks:
+    - name: download packages
+      apt: name=zip state=latest update_cache=yes
+
+    - name: unzip metrics server files
+      unarchive:
+        remote_src: yes
+        src: https://surfdrive.surf.nl/files/index.php/s/RCxPtHnz1agrY7V/download
+        dest: /home/ubuntu/
+
+    - name: deploy metrics server
+      shell: kubectl create -f /home/ubuntu/kubernetes/
+
+
