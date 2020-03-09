@@ -1,0 +1,14 @@
+---
+- hosts: web-server
+  become: true
+
+  tasks:
+  - name: remove Apache2
+    shell: apt-get remove -y apache2
+
+- hosts: db-server
+  become: true
+
+  tasks:
+  - name: remove MySQL
+    shell: apt-get remove -y mysql-server

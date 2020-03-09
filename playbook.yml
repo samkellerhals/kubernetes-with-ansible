@@ -1,0 +1,14 @@
+---
+- hosts: all
+  become: true
+  gather_facts: false
+
+  tasks:
+  - name: install python if not available.
+    raw: test -e usr/bin/python || (apt -y update && apt install -y python)
+
+  - name: update apt-cache
+    apt: update_cache=yes
+  
+  - name: install openjdk-11-jdk
+    apt: name=openjdk-11-jdk state=latest
